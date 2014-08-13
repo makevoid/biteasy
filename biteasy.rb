@@ -8,7 +8,7 @@ end
 
 ###
 
-# utils
+# utils - net
 
 class Neat
 
@@ -23,13 +23,34 @@ class Neat
 end
 
 
+# utils - cache
+
+def cache(name, &block)
+  filename = "cache/#{name}.json"
+  if File.exist? filename
+    JSON.parse File.read filename
+  else
+    value = block.call
+    File.open(filename, "w") do |f|
+      f.write value.to_json
+    end
+    value
+  end
+end
+
+
 
 # config
 
 @contacts_backup = "./config/kryptokit_backup.json"
 
 def contacts_import
-  @contacts = JSON.parse File.read @contacts_backup
+  contacts = JSON.parse File.read @contacts_backup
+  cont = {}
+  contacts.each do |c|
+    cont[c["address"]] = c["name"]
+  end
+  @contacts = cont
 end
 
 # import contacts
@@ -55,7 +76,7 @@ require 'pp'
 
 class Numeric
   def to_mbtc
-    (self.to_f * 10 ** -6).round(2)
+    (self.to_f * 10 ** -5).round(2)
   end
 
   def to_btc
@@ -74,28 +95,28 @@ class BitEasy
   end
 
 
-  def initialize
+  def initialize(tx_count_limit) # TODO: transaction#initialize
     from_address "1EiNgZmQsFN4rJLZJWt93quMEz3X82FJd2"
 
     @contacts = CONTACTS_ALL
+    @contacts[@address] = "this"
 
-
-    spents = spents_get
+    puts "address: #{@address}"
+    puts
+    puts
+    puts "transactions: "
+    puts
+    spents = cache(:"spents_#{@address[0..7]}"){ spents_get }
     spents = spents.fetch "data"
     transactions = spents.fetch "transactions"
 
-    for transaction in transactions
 
+    transactions.each_with_index do |transaction, idx|
+      return if idx > tx_count_limit
       transaction_puts transaction
-
-      puts "---"
+      puts "--"
     end
 
-    # putt tx, :inputs
-    # putt tx, :outputs
-    # spents = spents.keys
-
-    # pp spents
   end
 
   private
@@ -106,23 +127,44 @@ class BitEasy
     return if [tx["inputs"].size, tx["outputs"].size].max > 2
 
 
-    type = tx["inputs_value"] > tx["outputs_value"] ? :receive : :send
+
+    inputs, outputs = {}, {}
+    tx["inputs"].each do |trx|
+      outputs[trx["from_address"]] = trx["outpoint_value"].to_f
+    end
+    tx["outputs"].each do |trx|
+      inputs[trx["to_address"]] = trx["value"].to_f
+    end
+    # trans_total = outputs + inputs
+    # pp trans_total
+
+    # pp inputs
+    # pp outputs
+
+    total_value = inputs.fetch(@address, 0) - outputs.fetch(@address, 0)
+
+    type = total_value > 0 ? :receive : :send
     puts "type: #{type}"
 
+
+    puts "total_value: #{total_value.to_mbtc} mBTC"
+
+    # more useful infos:
+    #
     # puttb(tx, :transacted_value, &:to_mbtc)#{ |v| v.to_mbtc }
-    puttb(tx, :transacted_value){ |v| type == :receive ? v.to_mbtc : -v.to_mbtc }
-    puttb(tx, :inputs_value){  |v| v.to_mbtc }
-    puttb(tx, :outputs_value){ |v| v.to_mbtc }
-    puttb(tx, :created_at){    |v| Date.parse(v).strftime "%Y-%m-%d" }
-    putt tx, :confirmations
+    # puttb(tx, :transacted_value){ |v| type == :receive ? v.to_mbtc : -(v.to_mbtc) }
+    # puttb(tx, :inputs_value){  |v| v.to_mbtc }
+    # puttb(tx, :outputs_value){ |v| v.to_mbtc }
+    puttb(tx, :created_at){    |v| DateTime.parse(v).strftime "%Y-%m-%d %H:%M:%S" }
+    # putt tx, :confirmations
 
 
-
-    tx_type = "inputs"
-    transactions_sub tx, tx_type
-    tx_type = "outputs"
-    transactions_sub tx, tx_type
-    puts
+    # inputs & outputs
+    #
+    # tx_type = "inputs"
+    # transactions_sub tx, tx_type
+    # tx_type = "outputs"
+    # transactions_sub tx, tx_type
   end
 
   def transactions_sub(tx, tx_type) # sub transactions
@@ -130,9 +172,12 @@ class BitEasy
     puts "#{tx_type}:"
     for transaction in transactions
       if tx_type == "outputs"
-        puts "  #{transaction["to_address"]} -> #{transaction["value"].to_mbtc} mBTC"
+        # puts @contacts
+        aliased = @contacts.fetch transaction["to_address"], "<not found>"
+        puts "  #{transaction["to_address"]} -> #{transaction["value"].to_mbtc} mBTC - #{aliased}"
       else
-        puts "  #{transaction["from_address"]} -> #{transaction["outpoint_value"].to_mbtc} mBTC"
+        aliased = @contacts.fetch transaction["from_address"], "<not found>"
+        puts "  #{transaction["from_address"]} -> #{transaction["outpoint_value"].to_mbtc} mBTC - #{aliased}"
       end
     end
   end
@@ -155,9 +200,9 @@ class BitEasy
     "#{url_api_root}/transactions?address=#{address}&per_page=199" # page = 0
   end
 
-
 end
 
-be = BitEasy.new
+tx_count_limit = ARGV[0].to_i
+be = BitEasy.new tx_count_limit
 
 
