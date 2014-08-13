@@ -143,11 +143,16 @@ class BitEasy
 
     total_value = inputs.fetch(@address, 0) - outputs.fetch(@address, 0)
 
+    puts "#{inputs.fetch(@address, 0).to_mbtc} - #{outputs.fetch(@address, 0).to_mbtc}"
+
     type = total_value > 0 ? :receive : :send
     puts "type: #{type}"
 
 
     puts "total_value: #{total_value.to_mbtc} mBTC"
+    puttb(tx, :hash){ |v| v[0..5] }
+
+    pp outputs
 
     # more useful infos:
     #
