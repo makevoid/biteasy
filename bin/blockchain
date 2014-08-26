@@ -1,0 +1,6 @@
+tx_count_limit = 50
+tx_count_limit = ARGV[0].to_i if ARGV[0]
+bc = Blockchain.new tx_count_limit
+
+puts bc.transactions
+# bc.transactions_puts

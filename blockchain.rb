@@ -106,6 +106,8 @@ class Blockchain
     @contacts = CONTACTS_ALL
     @contacts[@address] = "this"
 
+    @labels = {}
+
 
     puts "address: #{@address}"
     address = cache(:"bchain_address_#{@address[0..7]}"){ spents_get }
@@ -131,7 +133,7 @@ class Blockchain
       return if idx > tx_count_limit
 
       # transaction_puts transaction
-      puts transaction_labelize transaction_object_to_s transaction
+      puts transaction_object_to_s transaction_labelize transaction
       puts "--"
     end
 
@@ -144,8 +146,9 @@ class Blockchain
 
   def transaction_labelize(tx)
     tx[:addresses] = tx[:addresses].map do |trans|
-      "#{trans} (#{labels[trans]})"
-    end
+      label = " (#{@labels[trans]})" if @labels[trans]
+      "#{trans}#{label}"
+    end if tx[:addresses]
     tx
   end
 
@@ -230,9 +233,5 @@ addresses: #{tx[:addresses].join(", ")}
   end
 
 end
-
-tx_count_limit = 50
-tx_count_limit = ARGV[0].to_i if ARGV[0]
-bc = Blockchain.new tx_count_limit
 
 
