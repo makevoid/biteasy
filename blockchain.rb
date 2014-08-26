@@ -42,7 +42,6 @@ def cache(name, &block)
 end
 
 
-
 # config
 
 @contacts_backup = "./config/kryptokit_backup.json"
@@ -146,8 +145,8 @@ class Blockchain
 
   def transaction_labelize(tx)
     tx[:addresses] = tx[:addresses].map do |trans|
-      label = " (#{@labels[trans]})" if @labels[trans]
-      "#{trans}#{label}"
+      label = "#{@contacts[trans]} - " if @contacts[trans]
+      "#{label}#{trans}"
     end if tx[:addresses]
     tx
   end
@@ -163,17 +162,23 @@ class Blockchain
     # time
     hours_diff = 2 # is blockchain GMT -1 ?
     time = tx["time"]
-    time = Time.at(time-3600*hours_diff).strftime "%Y-%m-%d %H:%M:%S"
+    time = Time.at(time-3600*hours_diff)
 
+    # Transaction.new
+    # alias :value :result
     { result: tx["result"].to_mbtc, time: time, addresses: addresses }
   end
 
   def transaction_object_to_s(tx)
     # unconfirmed = "no confirmations yet" if tx[:confirmations] == 0
+    action  = tx[:result] > 0 ? :received : :sent
+    action2 = tx[:result] > 0 ? :from     : :to
+    time = tx[:time].strftime "%Y-%m-%d %H:%M:%S"
+    days = ((Time.now - tx[:time]) / 64800).round(1)
     "
-result: #{tx[:result]} mBTC
-time: #{tx[:time]}
-addresses: #{tx[:addresses].join(", ")}
+#{action.upcase} #{tx[:result].abs} mBTC
+#{days} days ago (#{time})
+#{action2.upcase} #{tx[:addresses].join(", ")}
     ".strip
   end
 
@@ -211,7 +216,6 @@ addresses: #{tx[:addresses].join(", ")}
 
   end
 
-
   def putt(tx, value) # put_transaction
     puts "#{value}: #{tx[value.to_s]}"
   end
@@ -221,8 +225,6 @@ addresses: #{tx[:addresses].join(", ")}
     val = block.call val
     puts "#{value}: #{val}"
   end
-
-
 
   def url_api_root
     "https://blockchain.info"
