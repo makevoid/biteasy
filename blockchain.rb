@@ -25,9 +25,12 @@ end
 
 # utils - cache
 
+CACHE_TIME = Time.now - 64800 # 1 day ago # cache + update via async watcher
+
 def cache(name, &block)
   filename = "cache/#{name}.json"
-  if File.exist? filename
+  cached_file_is_good = File.exist?(filename) && File.mtime(filename) > CACHE_TIME
+  if cached_file_is_good
     JSON.parse File.read filename
   else
     value = block.call
@@ -86,6 +89,8 @@ end
 
 class Blockchain
 
+  attr_reader :transactions
+
   def from_address(address)
     @address = address
   end
@@ -117,55 +122,88 @@ class Blockchain
 
     transactions = address.fetch "txs"
     transactions.reverse!
+    transactions = transactions.map{ |tx| transaction_object tx }
+    transactions.select!{ |tx| tx[:result] != 0 }
+    # exclude transactions with more than 2 different addresses
+    transactions.reject!{ |tx| tx[:addresses].size > 2 }
+
     transactions.each_with_index do |transaction, idx|
       return if idx > tx_count_limit
 
-      transaction_puts transaction
+      # transaction_puts transaction
+      puts transaction_labelize transaction_object_to_s transaction
       puts "--"
     end
 
+    @transactions = transactions
+    self
   end
 
   private
 
 
-  def transaction_puts(tx)
-    return if [tx["inputs"].size, tx["out"].size].max > 2
-
-
-    inputs, outputs = {}, {}
-    tx["inputs"].each do |trx|
-      trx = trx["prev_out"]
-      inputs[trx["addr"]] = trx["value"].to_f
+  def transaction_labelize(tx)
+    tx[:addresses] = tx[:addresses].map do |trans|
+      "#{trans} (#{labels[trans]})"
     end
-    tx["out"].each do |trx|
-      outputs[trx["addr"]] = trx["value"].to_f
-    end
+    tx
+  end
 
-    total_value = inputs.fetch(@address, 0) - outputs.fetch(@address, 0)
+  def transaction_object(tx)
+    # addresses
+    inputs    = tx["inputs"].map{ |t| t["addr"] }
+    outputs   = tx["out"].map{ |t| t["addr"] }
+    addresses = inputs + outputs - [@address]
+    addresses.uniq!
+    addresses.compact!
 
-    puts "#{inputs.fetch(@address, 0).to_mbtc} - #{outputs.fetch(@address, 0).to_mbtc}"
-
-    type = total_value > 0 ? :receive : :send
-    puts "type: #{type}"
-
-
-    puts "total_value: #{total_value.to_mbtc} mBTC"
-    puttb(tx, :hash){ |v| v[0..5] }
-
-    # pp inputs
-    # pp outputs
-
-    # more useful infos:
-    #
-    # puttb(tx, :transacted_value, &:to_mbtc)#{ |v| v.to_mbtc }
-    # puttb(tx, :transacted_value){ |v| type == :receive ? v.to_mbtc : -(v.to_mbtc) }
-    # puttb(tx, :inputs_value){  |v| v.to_mbtc }
-    # puttb(tx, :outputs_value){ |v| v.to_mbtc }
-
+    # time
     hours_diff = 2 # is blockchain GMT -1 ?
-    puttb(tx, :time){    |v| Time.at(v-3600*hours_diff).strftime "%Y-%m-%d %H:%M:%S" }
-    # putt tx, :confirmations
+    time = tx["time"]
+    time = Time.at(time-3600*hours_diff).strftime "%Y-%m-%d %H:%M:%S"
+
+    { result: tx["result"].to_mbtc, time: time, addresses: addresses }
+  end
+
+  def transaction_object_to_s(tx)
+    # unconfirmed = "no confirmations yet" if tx[:confirmations] == 0
+    "
+result: #{tx[:result]} mBTC
+time: #{tx[:time]}
+addresses: #{tx[:addresses].join(", ")}
+    ".strip
+  end
+
+
+  def transaction_puts(tx)
+
+    # wtf???? ....
+
+    # return if [tx["inputs"].size, tx["out"].size].max > 2
+
+
+    # puts "#{inputs.fetch(@address, 0).to_mbtc} - #{outputs.fetch(@address, 0).to_mbtc}"
+
+    # type = total_value > 0 ? :receive : :send
+    # puts "type: #{type}"
+
+
+    # puts "total_value: #{total_value.to_mbtc} mBTC"
+    # puttb(tx, :hash){ |v| v[0..5] }
+
+    # # pp inputs
+    # # pp outputs
+
+    # # more useful infos:
+    # #
+    # # puttb(tx, :transacted_value, &:to_mbtc)#{ |v| v.to_mbtc }
+    # # puttb(tx, :transacted_value){ |v| type == :receive ? v.to_mbtc : -(v.to_mbtc) }
+    # # puttb(tx, :inputs_value){  |v| v.to_mbtc }
+    # # puttb(tx, :outputs_value){ |v| v.to_mbtc }
+
+    # hours_diff = 2 # is blockchain GMT -1 ?
+    # puttb(tx, :time){    |v| Time.at(v-3600*hours_diff).strftime "%Y-%m-%d %H:%M:%S" }
+    # # putt tx, :confirmations
 
 
   end
@@ -195,6 +233,6 @@ end
 
 tx_count_limit = 50
 tx_count_limit = ARGV[0].to_i if ARGV[0]
-be = Blockchain.new tx_count_limit
+bc = Blockchain.new tx_count_limit
 
 
